@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Card Maker</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <h2>Make a Card</h2>
+
+  <button id="addText">Add Text</button>
+  <button id="stickersBtn">Stickers</button>
+  <label for="bgColorPicker" id="bgLabel">Background color:</label>
+  <input type="color" id="bgColorPicker" value="#FFE699" aria-label="Background color picker">
+
+  <!-- Text formatting toolbar -->
+  <div id="textToolbar" class="toolbar">
+    <label for="fontFamily">Font</label>
+    <select id="fontFamily">
+      <option value="Arial">Arial</option>
+      <option value="Helvetica">Helvetica</option>
+      <option value="Georgia">Georgia</option>
+      <option value="Times New Roman">Times New Roman</option>
+      <option value="Courier New">Courier New</option>
+      <option value="Verdana">Verdana</option>
+    </select>
+
+    <label for="fontSize">Size</label>
+    <input id="fontSize" type="number" min="8" max="200" value="32">
+
+    <label for="textColor">Color</label>
+    <input id="textColor" type="color" value="#000000">
+
+    <button id="textBold" title="Toggle bold">B</button>
+    <button id="textItalic" title="Toggle italic">I</button>
+
+    <label for="textAlign">Align</label>
+    <select id="textAlign">
+      <option value="left">Left</option>
+      <option value="center">Center</option>
+      <option value="right">Right</option>
+    </select>
+  </div>
+
+  <br><br>
+
+  <canvas id="cardCanvas" width="600" height="400"></canvas>
+
+  <!-- Sticker panel -->
+  <div id="stickerPanel" class="sticker-panel hidden" aria-hidden="true">
+    <div class="sticker-panel-header">
+      <span>Stickers</span>
+      <button id="closeStickers" title="Close">✕</button>
+    </div>
+    <div id="stickerList" class="sticker-list"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+  <script src="script.js"></script>
+
+  
+</body>
+</html>
