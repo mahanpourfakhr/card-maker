@@ -94,6 +94,41 @@ window.addEventListener('keydown', function (e) {
   canvas.requestRenderAll();
 });
 
+// --- Arrow key movement (precise positioning) ---
+// Allow arrow keys to move selected objects by 5 pixels per key press.
+// Ignores arrow keys when typing in text inputs or editing text on canvas.
+window.addEventListener('keydown', function (e) {
+  if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+  
+  // Don't interfere with text editing
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+  
+  const active = (typeof canvas.getActiveObject === 'function') ? canvas.getActiveObject() : null;
+  if (!active) return;
+  
+  e.preventDefault();
+  const step = 5; // pixels per arrow key press
+  
+  switch (e.key) {
+    case 'ArrowUp':
+      active.set({ top: active.top - step });
+      break;
+    case 'ArrowDown':
+      active.set({ top: active.top + step });
+      break;
+    case 'ArrowLeft':
+      active.set({ left: active.left - step });
+      break;
+    case 'ArrowRight':
+      active.set({ left: active.left + step });
+      break;
+  }
+  
+  canvas.requestRenderAll();
+});
+
+
 // --- Clipboard (copy/cut/paste) for canvas objects ---
 let canvasClipboard = null;
 
@@ -495,6 +530,111 @@ canvas.on('mouse:dblclick', function (opt) {
   }
   // otherwise ignore double-click (deletion still works with Delete/Backspace)
 });
+
+// --- Snap-to-object guides with visual guide lines ---
+// When the user drags an object near other objects, show red guide lines
+// and snap the object to alignment (left, center, right, top, middle, bottom).
+const SNAP_THRESHOLD = 15; // pixels
+let guideLines = []; // array of guide line objects
+
+function clearGuideLines() {
+  guideLines.forEach(line => canvas.remove(line));
+  guideLines = [];
+  canvas.requestRenderAll();
+}
+
+function drawGuideLine(x1, y1, x2, y2) {
+  const line = new fabric.Line([x1, y1, x2, y2], {
+    stroke: 'red',
+    strokeWidth: 1,
+    selectable: false,
+    evented: false,
+    opacity: 0.7
+  });
+  canvas.add(line);
+  guideLines.push(line);
+}
+
+canvas.on('object:moving', function (e) {
+  clearGuideLines();
+  const obj = e.target;
+  if (!obj) return;
+  
+  const canvasObjects = canvas.getObjects().filter(o => o !== obj);
+  if (canvasObjects.length === 0) return;
+
+  const objBounds = {
+    left: obj.left,
+    top: obj.top,
+    right: obj.left + obj.width,
+    bottom: obj.top + obj.height,
+    centerX: obj.left + obj.width / 2,
+    centerY: obj.top + obj.height / 2
+  };
+
+  let snapX = null, snapY = null;
+  let guideXPos = null, guideYPos = null;
+
+  // Check each other object for alignment snap points
+  canvasObjects.forEach(function (other) {
+    const otherBounds = {
+      left: other.left,
+      top: other.top,
+      right: other.left + other.width,
+      bottom: other.top + other.height,
+      centerX: other.left + other.width / 2,
+      centerY: other.top + other.height / 2
+    };
+
+    // Horizontal snap: left, center, right
+    if (Math.abs(objBounds.left - otherBounds.left) < SNAP_THRESHOLD) {
+      snapX = otherBounds.left;
+      guideXPos = otherBounds.left;
+    }
+    if (Math.abs(objBounds.centerX - otherBounds.centerX) < SNAP_THRESHOLD) {
+      snapX = otherBounds.centerX - obj.width / 2;
+      guideXPos = otherBounds.centerX;
+    }
+    if (Math.abs(objBounds.right - otherBounds.right) < SNAP_THRESHOLD) {
+      snapX = otherBounds.right - obj.width;
+      guideXPos = otherBounds.right;
+    }
+
+    // Vertical snap: top, middle, bottom
+    if (Math.abs(objBounds.top - otherBounds.top) < SNAP_THRESHOLD) {
+      snapY = otherBounds.top;
+      guideYPos = otherBounds.top;
+    }
+    if (Math.abs(objBounds.centerY - otherBounds.centerY) < SNAP_THRESHOLD) {
+      snapY = otherBounds.centerY - obj.height / 2;
+      guideYPos = otherBounds.centerY;
+    }
+    if (Math.abs(objBounds.bottom - otherBounds.bottom) < SNAP_THRESHOLD) {
+      snapY = otherBounds.bottom - obj.height;
+      guideYPos = otherBounds.bottom;
+    }
+  });
+
+  // Apply snaps if found
+  if (snapX !== null) obj.set({ left: snapX });
+  if (snapY !== null) obj.set({ top: snapY });
+
+  // Draw guide lines if snapped
+  if (guideXPos !== null) {
+    // Vertical red line at the snap position
+    drawGuideLine(guideXPos, 0, guideXPos, canvas.height);
+  }
+  if (guideYPos !== null) {
+    // Horizontal red line at the snap position
+    drawGuideLine(0, guideYPos, canvas.width, guideYPos);
+  }
+  canvas.requestRenderAll();
+});
+
+// Clear guide lines when done dragging
+canvas.on('object:modified', clearGuideLines);
+canvas.on('mouse:up', clearGuideLines);
+
 
 // --- Export / Share the canvas ---
 // Provide two user-facing ways to get the canvas out of the app:
