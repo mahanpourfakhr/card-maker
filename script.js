@@ -1,3 +1,15 @@
+/*
+  script.js
+
+  Main application script for Card Maker. Responsibilities:
+  - Initialize the Fabric.js canvas
+  - Wire up UI controls (add text, formatting, background)
+  - Load and insert stickers from the Stickers folder
+  - Provide canvas export / share functionality
+  - Implement basic clipboard (copy/cut/paste) for canvas objects
+  - Handle panel dragging and UI interactions
+*/
+
 // Coerce invalid baseline values coming from libraries (fixes Chrome warning)
 (function() {
   try {
@@ -22,16 +34,19 @@
   }
 })();
 
-// Create the canvas
+// --- Canvas initialization ---
+// Create a Fabric.js canvas instance that we will use for all drawing and object manipulation.
 const canvas = new fabric.Canvas('cardCanvas');
 
-// Initialize background from color picker (if present) and render
+// --- Background color initialization ---
+// Read the background color picker (if present) and apply it to the canvas background.
 const picker = document.getElementById('bgColorPicker');
 const initialBg = (picker && picker.value) || '#FFE699';
 canvas.backgroundColor = initialBg;
 canvas.requestRenderAll();
 
-// Add text button
+// --- Add Text control ---
+// When the user clicks "Add Text" we create a new Fabric Textbox with current toolbar defaults
 document.getElementById('addText').onclick = function () {
   // Use toolbar defaults for new text if available
   const fontFamily = document.getElementById('fontFamily')?.value || 'Arial';
@@ -58,7 +73,9 @@ if (bgPicker) {
   });
 }
 
-// Allow Delete or Backspace to remove selected objects (textboxes or any selection)
+// --- Deletion via keyboard ---
+// Allow the user to remove selected objects using the Delete or Backspace keys.
+// This handler ignores keystrokes when typing into inputs or editable elements.
 window.addEventListener('keydown', function (e) {
   if (e.key !== 'Delete' && e.key !== 'Backspace') return;
   // don't interfere with typing in inputs
@@ -77,7 +94,67 @@ window.addEventListener('keydown', function (e) {
   canvas.requestRenderAll();
 });
 
+// --- Clipboard (copy/cut/paste) for canvas objects ---
+let canvasClipboard = null;
+
+function copySelection() {
+  const active = (typeof canvas.getActiveObjects === 'function')
+    ? canvas.getActiveObjects() : (canvas.getActiveObject() ? [canvas.getActiveObject()] : []);
+  if (!active || active.length === 0) return;
+  // store serializable representations
+  canvasClipboard = active.map(obj => obj.toObject(['src']));
+  // optional: give slight visual feedback
+  console.log('Copied', canvasClipboard.length, 'object(s)');
+}
+
+function cutSelection() {
+  copySelection();
+  const active = (typeof canvas.getActiveObjects === 'function')
+    ? canvas.getActiveObjects() : (canvas.getActiveObject() ? [canvas.getActiveObject()] : []);
+  if (!active || active.length === 0) return;
+  active.forEach(obj => canvas.remove(obj));
+  canvas.discardActiveObject();
+  canvas.requestRenderAll();
+}
+
+function pasteClipboard() {
+  if (!canvasClipboard) return;
+  fabric.util.enlivenObjects(canvasClipboard, function(enlivened) {
+    const added = [];
+    enlivened.forEach(function(obj) {
+      // offset pasted objects so they are visible and not overlapping exactly
+      obj.set({ left: (obj.left || 100) + 20, top: (obj.top || 100) + 20 });
+      canvas.add(obj);
+      added.push(obj);
+    });
+    if (added.length) {
+      canvas.discardActiveObject();
+      if (added.length === 1) canvas.setActiveObject(added[0]);
+      canvas.requestRenderAll();
+    }
+  });
+}
+
+// Keyboard shortcuts: Ctrl/Cmd+C, X, V
+window.addEventListener('keydown', function (e) {
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+  const mod = isMac ? e.metaKey : e.ctrlKey;
+  if (!mod) return;
+  const key = (e.key || '').toLowerCase();
+  if (key === 'c') {
+    e.preventDefault();
+    copySelection();
+  } else if (key === 'x') {
+    e.preventDefault();
+    cutSelection();
+  } else if (key === 'v') {
+    e.preventDefault();
+    pasteClipboard();
+  }
+});
+
 // --- Text formatting logic ---
+// Helpers and toolbar synchronization for changing font family, size, color, weight, style, and alignment
 function applyPropsToActive(props) {
   const active = (typeof canvas.getActiveObjects === 'function')
     ? canvas.getActiveObjects() : (canvas.getActiveObject() ? [canvas.getActiveObject()] : []);
@@ -162,6 +239,8 @@ canvas.on('selection:cleared', updateToolbarFromActive);
 canvas.on('object:selected', updateToolbarFromActive);
 
 // --- Stickers integration ---
+// Loads a JSON index of stickers from `Stickers/stickers.json`, displays thumbnails in a
+// floating panel, and inserts selected images onto the canvas as Fabric Image objects.
 const stickersBtn = document.getElementById('stickersBtn');
 const stickerPanel = document.getElementById('stickerPanel');
 const closeStickers = document.getElementById('closeStickers');
@@ -183,6 +262,165 @@ stickersBtn?.addEventListener('click', function () {
   else hideStickerPanel();
 });
 closeStickers?.addEventListener('click', hideStickerPanel);
+
+// Make sticker panel draggable by its header using Pointer Events
+function enableStickerDrag() {
+  if (!stickerPanel) return;
+  const stickerHeader = stickerPanel.querySelector('.sticker-panel-header');
+  if (!stickerHeader) return;
+  stickerHeader.style.cursor = 'move';
+  // prevent touch scrolling interference on mobile
+  stickerHeader.style.touchAction = 'none';
+  // avoid native HTML5 drag of text or elements
+  stickerHeader.setAttribute('draggable', 'false');
+  stickerHeader.style.userSelect = 'none';
+  stickerHeader.addEventListener('dragstart', function (e) { e.preventDefault(); });
+
+  let dragging = false;
+  let startX = 0, startY = 0, startLeft = 0, startTop = 0;
+  let activePointerId = null;
+
+  function ensurePanelHasLeftTop() {
+    // If panel is positioned with `right`, convert to explicit left/top so we can move it
+    const style = getComputedStyle(stickerPanel);
+    if (style.right && style.right !== 'auto') {
+      const rect = stickerPanel.getBoundingClientRect();
+      stickerPanel.style.left = rect.left + 'px';
+      stickerPanel.style.top = rect.top + 'px';
+      stickerPanel.style.right = 'auto';
+    }
+    // ensure position fixed
+    stickerPanel.style.position = 'fixed';
+  }
+
+  function onPointerDown(e) {
+    // only react to primary button
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    ensurePanelHasLeftTop();
+    dragging = true;
+    document.body.style.userSelect = 'none';
+    startX = e.clientX;
+    startY = e.clientY;
+    const rect = stickerPanel.getBoundingClientRect();
+    startLeft = rect.left;
+    startTop = rect.top;
+    // capture the pointer so we keep receiving events even if the cursor moves fast
+    try {
+      if (typeof e.pointerId !== 'undefined' && stickerPanel.setPointerCapture) {
+        stickerPanel.setPointerCapture(e.pointerId);
+        activePointerId = e.pointerId;
+      }
+    } catch (err) {
+      // ignore pointer capture failures
+    }
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  }
+
+  function onPointerMove(e) {
+    if (!dragging) return;
+    e.preventDefault();
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+    const pad = 8;
+    let left = startLeft + (clientX - startX);
+    let top = startTop + (clientY - startY);
+    const maxLeft = Math.max(pad, window.innerWidth - stickerPanel.offsetWidth - pad);
+    const maxTop = Math.max(pad, window.innerHeight - stickerPanel.offsetHeight - pad);
+    left = Math.max(pad, Math.min(left, maxLeft));
+    top = Math.max(pad, Math.min(top, maxTop));
+    stickerPanel.style.left = left + 'px';
+    stickerPanel.style.top = top + 'px';
+  }
+
+  function onPointerUp() {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
+    // release pointer capture if we captured it
+    try {
+      if (activePointerId !== null && stickerPanel.releasePointerCapture) {
+        stickerPanel.releasePointerCapture(activePointerId);
+      }
+    } catch (err) {
+      // ignore
+    }
+    activePointerId = null;
+    window.removeEventListener('pointermove', onPointerMove);
+    window.removeEventListener('pointerup', onPointerUp);
+  }
+
+  // Use a document-level pointerdown so clicks on inner elements still start drag
+  document.addEventListener('pointerdown', function (e) {
+    // don't start dragging when clicking the close button
+    if (e.target.closest && e.target.closest('#closeStickers')) return;
+    const hdr = e.target.closest && e.target.closest('.sticker-panel-header');
+    if (!hdr || !stickerPanel.contains(hdr)) return;
+    onPointerDown(e);
+    // try to capture the pointer on the panel so we continue receiving events
+    try {
+      if (typeof e.pointerId !== 'undefined' && stickerPanel.setPointerCapture) {
+        stickerPanel.setPointerCapture(e.pointerId);
+        activePointerId = e.pointerId;
+      }
+    } catch (err) {
+      console.debug('pointer capture not supported:', err);
+    }
+  });
+
+  // Fallback: attach mouse and touch handlers directly to header
+  function onMouseDown(e) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    ensurePanelHasLeftTop();
+    dragging = true;
+    document.body.style.userSelect = 'none';
+    startX = e.clientX;
+    startY = e.clientY;
+    const rect = stickerPanel.getBoundingClientRect();
+    startLeft = rect.left;
+    startTop = rect.top;
+    window.addEventListener('mousemove', onPointerMove);
+    window.addEventListener('mouseup', onPointerUp);
+  }
+
+  function onTouchStart(e) {
+    if (!e.touches || e.touches.length === 0) return;
+    e.preventDefault();
+    ensurePanelHasLeftTop();
+    dragging = true;
+    document.body.style.userSelect = 'none';
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    const rect = stickerPanel.getBoundingClientRect();
+    startLeft = rect.left;
+    startTop = rect.top;
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onPointerUp);
+  }
+
+  function onTouchMove(e) {
+    if (!dragging || !e.touches || e.touches.length === 0) return;
+    e.preventDefault();
+    const clientX = e.touches[0].clientX;
+    const clientY = e.touches[0].clientY;
+    const pad = 8;
+    let left = startLeft + (clientX - startX);
+    let top = startTop + (clientY - startY);
+    const maxLeft = Math.max(pad, window.innerWidth - stickerPanel.offsetWidth - pad);
+    const maxTop = Math.max(pad, window.innerHeight - stickerPanel.offsetHeight - pad);
+    left = Math.max(pad, Math.min(left, maxLeft));
+    top = Math.max(pad, Math.min(top, maxTop));
+    stickerPanel.style.left = left + 'px';
+    stickerPanel.style.top = top + 'px';
+  }
+
+  stickerHeader.addEventListener('mousedown', onMouseDown);
+  stickerHeader.addEventListener('touchstart', onTouchStart, { passive: false });
+}
+
+enableStickerDrag();
 
 // Load sticker list JSON and populate thumbnails
 if (!stickerList) {
@@ -208,7 +446,9 @@ if (!stickerList) {
       img.addEventListener('click', function () {
         // Add sticker to canvas centered
         fabric.Image.fromURL(path, function (oImg) {
-          oImg.set({ left: canvas.width / 2 - (oImg.width * 0.25) / 2, top: canvas.height / 2 - (oImg.height * 0.25) / 2 });
+          const cw = (typeof canvas.getWidth === 'function') ? canvas.getWidth() : (canvas.width || 1000);
+          const ch = (typeof canvas.getHeight === 'function') ? canvas.getHeight() : (canvas.height || 700);
+          oImg.set({ left: cw / 2 - (oImg.width * 0.25) / 2, top: ch / 2 - (oImg.height * 0.25) / 2 });
           // set an initial scale so image fits reasonably
           const maxDim = Math.max(oImg.width, oImg.height);
           const scale = Math.min(200 / maxDim, 1) * 0.8;
@@ -236,12 +476,81 @@ if (!stickerList) {
   });
 }
 
-// Double-click to remove an object (convenience)
+// --- Double-click behavior ---
+// Double-click a text object to enter in-place editing. For non-text objects, double-click
+// no longer deletes them (use Delete/Backspace instead) to avoid accidental removal.
 canvas.on('mouse:dblclick', function (opt) {
   const target = opt.target;
-  if (target) {
-    canvas.remove(target);
-    canvas.requestRenderAll();
+  if (!target) return;
+  // If object supports enterEditing (fabric.Textbox/Text), enter edit mode
+  if (typeof target.enterEditing === 'function') {
+    try {
+      target.enterEditing();
+      if (typeof target.selectAll === 'function') target.selectAll();
+      canvas.setActiveObject(target);
+      canvas.requestRenderAll();
+    } catch (e) {
+      console.warn('Failed to enter editing mode:', e);
+    }
+  }
+  // otherwise ignore double-click (deletion still works with Delete/Backspace)
+});
+
+// --- Export / Share the canvas ---
+// Provide two user-facing ways to get the canvas out of the app:
+// 1) "Save Image" downloads a PNG file of the canvas.
+// 2) "Email / Share" tries the Web Share API (mobile-friendly). If not available,
+//    it falls back to downloading the image and opening a mailto: link instructing
+//    the user to attach the downloaded file.
+function dataUrlToBlob(dataUrl) {
+  return fetch(dataUrl).then(r => r.blob());
+}
+
+document.getElementById('saveImage')?.addEventListener('click', function () {
+  try {
+    const dataUrl = canvas.toDataURL({ format: 'png', quality: 1 });
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = 'card.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch (err) {
+    console.error('Failed to save image', err);
+    alert('Failed to save image: ' + err.message);
+  }
+});
+
+document.getElementById('shareImage')?.addEventListener('click', async function () {
+  try {
+    const dataUrl = canvas.toDataURL({ format: 'png', quality: 1 });
+    const blob = await dataUrlToBlob(dataUrl);
+    const file = new File([blob], 'card.png', { type: 'image/png' });
+
+    // Try Web Share API with files (mobile/modern browsers)
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'My Card', text: 'A card I made' });
+        return;
+      } catch (err) {
+        console.warn('Web Share failed, falling back', err);
+      }
+    }
+
+    // Fallback: trigger download and open mail client with instructions
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = 'card.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    const subject = encodeURIComponent('A card I made');
+    const body = encodeURIComponent("Hi,%0A%0AI've created a card and saved it as 'card.png'. Please attach that file to this email.%0A%0AThanks!");
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  } catch (err) {
+    console.error('Failed to share image', err);
+    alert('Failed to share image: ' + err.message);
   }
 });
 

@@ -6,10 +6,16 @@
 </head>
 <body>
 
+  <!-- Page title -->
   <h2>Make a Card</h2>
 
+  <!-- Primary controls: Add text, open stickers panel, save/share the canvas image -->
   <button id="addText">Add Text</button>
   <button id="stickersBtn">Stickers</button>
+  <button id="saveImage" title="Download the canvas as a PNG">Save Image</button>
+  <button id="shareImage" title="Share or email the canvas image">Email / Share</button>
+
+  <!-- Background color picker (applies to the canvas) -->
   <label for="bgColorPicker" id="bgLabel">Background color:</label>
   <input type="color" id="bgColorPicker" value="#FFE699" aria-label="Background color picker">
 
@@ -44,13 +50,13 @@
 
   <br><br>
 
-  <canvas id="cardCanvas" width="600" height="400"></canvas>
+  <canvas id="cardCanvas" width="1000" height="700"></canvas>
 
   <!-- Sticker panel -->
   <div id="stickerPanel" class="sticker-panel hidden" aria-hidden="true">
     <div class="sticker-panel-header">
       <span>Stickers</span>
-      <button id="closeStickers" title="Close">✕</button>
+      <button id="closeStickers" title="Close">X</button>
     </div>
     <div id="stickerList" class="sticker-list"></div>
   </div>

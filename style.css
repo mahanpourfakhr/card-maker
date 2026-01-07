@@ -1,11 +1,21 @@
+/*
+  style.css
+  Basic styling for the Card Maker app: layout, toolbar, canvas, and sticker panel
+*/
+
 body {
   font-family: Arial, sans-serif;
   text-align: center;
   background-color: #f5f5f5;
 }
 
+/* Canvas styling: centered and responsive while keeping aspect ratio */
 canvas {
   border: 2px solid black;
+  display: block;
+  margin: 18px auto;
+  max-width: calc(100% - 36px);
+  height: auto;
 }
 
 label[for="bgColorPicker"] {
@@ -30,8 +40,8 @@ label[for="bgColorPicker"] {
   font-weight: 700;
 }
 
-/* Sticker panel styles */
 .hidden { display: none; }
+/* Sticker panel styles: floating panel with thumbnails */
 .sticker-panel {
   position: fixed;
   right: 20px;
@@ -52,6 +62,34 @@ label[for="bgColorPicker"] {
   padding:8px 10px;
   border-bottom:1px solid #eee;
   font-weight:600;
+  cursor: move;
+}
+/* prevent text selection/drag of header label */
+.sticker-panel-header > span {
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.sticker-panel-header button {
+  background: transparent;
+  border: none;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  color: #333;
+  border-radius: 6px;
+}
+.sticker-panel-header button:hover {
+  background: rgba(0,0,0,0.06);
+}
+.sticker-panel-header button:focus {
+  outline: 2px solid rgba(100,130,255,0.6);
+  outline-offset: 2px;
 }
 .sticker-list {
   display:flex;
